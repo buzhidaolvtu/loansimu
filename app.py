@@ -3,24 +3,30 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib
+from matplotlib import font_manager
+import os
 
 
 # --- 0. 修复 Matplotlib 中文显示问题 ---
 # 尝试寻找系统中可用的中文字体
 def set_matplot_zh():
-    from matplotlib import font_manager
-    # 1. 尝试直接设置常见 Linux/Mac/Windows 字体族
-    plt.rcParams['font.sans-serif'] = ['Source Han Sans CN', 'Noto Sans CJK JP', 'Microsoft YaHei', 'SimHei', 'Arial Unicode MS']
-    plt.rcParams['axes.unicode_minus'] = False
+    # 假设 msyh.ttf 放在代码根目录下
+    font_file = "msyh.ttf"
 
-    # 2. 检查当前环境下到底哪个字体生效了
-    for font in plt.rcParams['font.sans-serif']:
-        try:
-            if font_manager.findfont(font, fallback_to_default=False):
-                return font
-        except:
-            continue
-    return "sans-serif"
+    if os.path.exists(font_file):
+        # 1. 注册字体文件
+        font_manager.fontManager.addfont(font_file)
+        # 2. 获取该字体的正式名称
+        prop = font_manager.FontProperties(fname=font_file)
+        # 3. 设置为全局字体
+        plt.rcParams['font.family'] = prop.get_name()
+        plt.rcParams['axes.unicode_minus'] = False  # 修复负号显示
+        return prop.get_name()
+    else:
+        # 如果文件丢失，针对 Mac 的后备方案
+        st.warning("未找到 msyh.ttf，尝试调用 Mac 系统字体...")
+        plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'sans-serif']
+        return "Arial Unicode MS"
 
 
 zh_font = set_matplot_zh()

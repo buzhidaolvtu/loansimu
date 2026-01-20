@@ -120,13 +120,25 @@ with col_plot:
     ax.set_ylim(0, 12)
     st.pyplot(fig)
 with col_text:
-    st.markdown("### 📑 决策拆解")
-    st.write(f"在{repayment_type}下，总利息支出为 **{total_interest_cost:,.2f}元**。")
-    avg_annual_outflow = (total_principal + total_interest_cost) / years
-    if stock_dividend_annual > avg_annual_outflow:
-        st.success("方案3年分红超过年均还款压力。")
+    st.write("### 📖 坐标轴说明")
+    st.markdown(f"""
+        **1. 横轴 (ROI): 资金回报率**
+        - 以 **房贷利率 ({loan_rate*100:.2f}%)** 为生命线。
+        - **红色区域 (左侧)**: 负利差区。意味着你的资金增值速度慢于债务吞噬速度，长期持有将导致本金缩水。
+        - **绿色区域 (右侧)**: 正利差区。利用低息贷款作为杠杆，实现资产净值扩张。
+
+        **2. 纵轴 (Risk): 综合风险评分**
+        - **方案1 (风险2)**: 风险主要来自通胀和利差损耗，但生活应急能力极强。
+        - **方案2 (风险6)**: 虽然无波动风险，但由于 **现金流完全锁死** 导致生活防御力下降，风险评分设为中等。
+        - **方案3 (风险9)**: 承受股价波动的本金风险，需具备极强的心理素质。
+        """)
+
+    # 动态实时分析
+    spread = (stock_roi - loan_rate) * 100
+    if spread > 0:
+        st.success(f"**当前状态：正向套利**\n\n方案3比方案2多出 **{spread:.2f}%** 的年化收益，属于优质财务杠杆。")
     else:
-        st.warning("方案3年分红不足以覆盖全额还款压力。")
+        st.error(f"**当前状态：利差倒挂**\n\n方案3收益低于还贷节省，建议优先考虑方案2。")
 
 # 7. 终值预测
 st.divider()

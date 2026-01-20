@@ -9,11 +9,18 @@ import matplotlib
 # 尝试寻找系统中可用的中文字体
 def set_matplot_zh():
     from matplotlib import font_manager
-    fonts = font_manager.findSystemFonts()
-    for f in fonts:
-        if 'simhei' in f.lower() or 'msyh' in f.lower() or 'arial unicode' in f.lower():
-            return font_manager.FontProperties(fname=f).get_name()
-    return None
+    # 1. 尝试直接设置常见 Linux/Mac/Windows 字体族
+    plt.rcParams['font.sans-serif'] = ['Source Han Sans CN', 'Noto Sans CJK JP', 'Microsoft YaHei', 'SimHei', 'Arial Unicode MS']
+    plt.rcParams['axes.unicode_minus'] = False
+
+    # 2. 检查当前环境下到底哪个字体生效了
+    for font in plt.rcParams['font.sans-serif']:
+        try:
+            if font_manager.findfont(font, fallback_to_default=False):
+                return font
+        except:
+            continue
+    return "sans-serif"
 
 
 zh_font = set_matplot_zh()

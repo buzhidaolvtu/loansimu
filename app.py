@@ -39,13 +39,13 @@ st.set_page_config(page_title="房贷资金决策专业版", layout="wide")
 
 # --- 1. 侧边栏：核心参数配置 ---
 st.sidebar.header("⚙️ 贷款与投资参数")
-total_principal = st.sidebar.number_input("待处理资金本金 (元)", 10000, 1000000, 50000, 5000)
+total_principal = st.sidebar.number_input("待处理资金本金 (元)", 10000, 5000000, 50000, 5000)
 years = st.sidebar.slider("剩余贷款期限 (年)", 1, 30, 27)
 loan_rate = st.sidebar.slider("房贷年利率 (%)", 1.0, 6.0, 3.15, 0.05) / 100
 repayment_type = st.sidebar.radio("还款方式", ["等额本息", "等额本金"])
 
 st.sidebar.header("📈 投资参数")
-cash_yield = st.sidebar.slider("方案1：现金理财收益率 (%)", 0.0, 5.0, 2.0, 0.1) / 100
+cash_yield = st.sidebar.slider("方案1：现金理财收益率 (%)", 0.0, 10.0, 0.0, 0.1) / 100
 stock_dividend_annual = st.sidebar.number_input("方案3：预计每年分红总额 (元)", 0, 100000, 2800)
 
 

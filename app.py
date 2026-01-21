@@ -46,7 +46,7 @@ repayment_type = st.sidebar.radio("还款方式", ["等额本息", "等额本金
 
 st.sidebar.header("📈 投资参数")
 cash_yield = st.sidebar.slider("方案1：现金理财收益率 (%)", 0.0, 10.0, 0.0, 0.1) / 100
-stock_dividend_annual = st.sidebar.number_input("方案3：预计每年分红总额 (元)", 0, 100000, 2800)
+stock_dividend_annual = st.sidebar.number_input("方案3：预计每年分红总额 (元)", 0, 1000000, 2800)
 
 
 # --- 2. 核心数学解耦函数 ---

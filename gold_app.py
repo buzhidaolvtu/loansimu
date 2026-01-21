@@ -102,5 +102,51 @@ try:
     cols[2].metric("3年年化", f"{latest['annual_3y']:.2f}%")
     cols[3].metric("5年年化", f"{latest['annual_5y']:.2f}%")
 
+    # --- 5. 底部新增：2026年度定投跟踪 ---
+    st.divider()
+    st.header("📅 2026年度黄金定投跟踪 📿")
+
+    # 构造 2026 年 12 个月的日期序列
+    months_2026 = pd.date_range(start='2026-01-01', periods=12, freq='MS')
+    plan_data = []
+
+    current_date = datetime.now()
+    completed_months = 0
+    accumulated_sum = 0.0  # 用于累加已发生的金额
+
+    for m in months_2026:
+        month_str = m.strftime('%Y-%m')
+        # 在 df 中查找该月的历史均价
+        match = df[df['month'].dt.strftime('%Y-%m') == month_str]
+
+        if not match.empty:
+            avg_price_val = float(match.iloc[0]['price'])
+            avg_price_display = f"￥{avg_price_val:.2f}"
+            completed_months += 1
+            accumulated_sum += avg_price_val  # 核心逻辑：直接累加表格中存在的金额
+        elif m > current_date:
+            avg_price_display = "待发生"
+        else:
+            avg_price_display = "计算中..."
+
+        plan_data.append({"月份": month_str, "实物金价 📿": avg_price_display})
+
+    # 转换为 DataFrame 并转置为两行显示
+    df_plan = pd.DataFrame(plan_data).set_index("月份").T
+
+    # 显示定投进度和自动累积的金额
+    progress_val = completed_months / 12
+
+    stat_col1, stat_col2 = st.columns(2)
+    with stat_col1:
+        st.write(f"**2026年定投进度：{completed_months} / 12 个月 🥇**")
+        st.progress(progress_val)
+    with stat_col2:
+        # 这里显示的金额就是表格中所有已出价格的直接加总
+        st.metric("2026年度已累积投入 (按每月1g计)", f"￥{accumulated_sum:,.2f}")
+
+    # 渲染表格
+    st.table(df_plan)
+
 except Exception as e:
     st.error(f"分析失败: {e}")

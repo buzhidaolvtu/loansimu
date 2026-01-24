@@ -238,6 +238,76 @@ if cb_df is not None:
     # 针对定投的实操提醒
     st.markdown(f"> **2026实操策略提示：** {desc}")
 
+
+def get_msi_analysis(df_daily, cb_df, macro_df):
+    try:
+        # 1. 计算价格乖离率 (Bias)
+        price_now = df_daily['price'].iloc[-1]
+        ma20 = df_daily['price'].rolling(20).mean().iloc[-1]
+        bias_20 = (price_now - ma20) / ma20 * 100
+
+        # 2. 计算相关性动量
+        corr_now = cb_df['corr'].iloc[-1]
+        corr_delta = corr_now - cb_df['corr'].tail(10).mean()
+
+        # 3. 计算宏观抵抗力 (对比 DXY)
+        dxy_change = macro_df['dxy'].pct_change().tail(5).mean()
+        gold_change = df_daily['price'].pct_change().tail(5).mean()
+        # 如果 DXY 涨且 Gold 涨，抵抗力得高分
+        resistance_score = 100 if (dxy_change > 0 and gold_change > 0) else 50
+
+        # 综合评分逻辑 (0-100)
+        # 权重：40% 乖离度, 30% 相关性变动, 30% 宏观抵抗力
+        msi_score = (min(abs(bias_20) * 5, 40) +
+                     min(max(corr_delta * 200, 0), 30) +
+                     (resistance_score * 0.3))
+
+        return msi_score, bias_20
+    except:
+        return 50, 0
+
+
+# --- 动量分析 ---
+msi_val, b20 = get_msi_analysis(df_daily, cb_df, macro_df)
+
+st.subheader("🚀 MSI 动量强度雷达")
+
+# 1. 动量 Alert 核心逻辑
+alert_text = ""
+alert_type = "info" # 默认为普通信息
+
+if msi_val > 75:
+    alert_text = "🚨 【动量过热警报】MSI 评分已突破 75！市场进入极端狂热区，1118元附近追涨风险极大，建议仅维持 1g 基础定投，严禁任何大额加仓。"
+    alert_type = "error"
+    st.toast("发现极端动量过热，请警惕风险！", icon="🚨")
+elif msi_val < 35:
+    alert_text = "🟢 【动量机会提醒】MSI 评分低于 35。市场情绪当前较为低迷或存在超跌，1118元以下可能是长线布局的‘捡漏’机会。"
+    alert_type = "success"
+    st.toast("动量回落至机会区，建议关注布局。", icon="✅")
+else:
+    alert_text = "⚖️ 【动量平稳状态】当前 MSI 得分在 35-75 之间。动量处于健康博弈区间，无极端超买超卖，建议继续执行 2026 既定定投计划。"
+    alert_type = "info"
+
+m_col1, m_col2 = st.columns([1, 2])
+
+with m_col1:
+    st.metric("动量得分", f"{msi_val:.1f}/100",
+              delta="超买风险" if msi_val > 70 else "动量健康",
+              delta_color="inverse" if msi_val > 70 else "normal")
+
+with m_col2:
+    # 根据 Alert 状态显示不同颜色的提醒框
+    if alert_type == "error":
+        st.error(alert_text)
+    elif alert_type == "success":
+        st.success(alert_text)
+    else:
+        st.info(alert_text)
+
+# 补充：原本的 Bias 详细解读（保留）
+if msi_val > 80:
+    st.warning(f"💡 深度诊断：当前价格偏离 20 日均线 {b20:.2f}%。这种动量通常由情绪驱动，慎防回调。")
+
 st.divider()
 
 

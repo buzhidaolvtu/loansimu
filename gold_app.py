@@ -308,6 +308,74 @@ with m_col2:
 if msi_val > 80:
     st.warning(f"💡 深度诊断：当前价格偏离 20 日均线 {b20:.2f}%。这种动量通常由情绪驱动，慎防回调。")
 
+
+# --- 在执行 MSI 分析后，构建历史动量序列 ---
+@st.cache_data(ttl=3600)
+def get_msi_history(df_daily, cb_df, macro_df):
+    # 这里我们模拟计算过去 30 天的 MSI 走势
+    msi_history = []
+    dates = cb_df['date'].tail(30).tolist()
+
+    # 为了效率，我们对 tail(30) 进行滚动计算
+    for i in range(-30, 0):
+        # 截取到当日的数据
+        sub_df = df_daily.iloc[:len(df_daily) + i + 1]
+        sub_cb = cb_df.iloc[:len(cb_df) + i + 1]
+        sub_macro = macro_df.iloc[:len(macro_df) + i + 1]
+
+        score, _ = get_msi_analysis(sub_df, sub_cb, sub_macro)
+        msi_history.append(score)
+
+    return pd.DataFrame({'date': dates, 'msi': msi_history})
+
+
+# --- UI 渲染历史图表 ---
+msi_hist_df = get_msi_history(df_daily, cb_df, macro_df)
+
+fig_msi = go.Figure()
+fig_msi.add_trace(go.Scatter(
+    x=msi_hist_df['date'], y=msi_hist_df['msi'],
+    mode='lines+markers',
+    name='MSI 动量趋势',
+    line=dict(color='#FF4500', width=3),
+    fill='tozeroy',
+    fillcolor='rgba(255, 69, 0, 0.1)'
+))
+
+# 增加 75 和 35 的阈值线
+fig_msi.add_hline(y=75, line_dash="dash", line_color="red", annotation_text="超买区")
+fig_msi.add_hline(y=35, line_dash="dash", line_color="green", annotation_text="机会区")
+
+fig_msi.update_layout(
+    title="🚀 近 30 日动量强度 (MSI) 演变趋势",
+    yaxis=dict(range=[0, 100]),
+    height=300,
+    template="plotly_white"
+)
+st.plotly_chart(fig_msi, use_container_width=True)
+
+# --- C. 基于动量的震荡箱体预测 ---
+st.subheader("📦 未来 30 天震荡箱体预测")
+curr_price = df_daily['price'].iloc[-1]
+# 逻辑：动量越高，向上波动的概率越大；动量回落，向下寻找支撑
+# 波动率估算 (利用过去 30 天标准差)
+volatility = df_daily['price'].tail(30).std()
+
+if msi_val > 60:
+    support, resistance = curr_price - volatility, curr_price + (volatility * 1.5)
+    box_msg = "🔥 **动量偏强**：价格大概率向上测试阻力位，回调空间有限。"
+elif msi_val < 40:
+    support, resistance = curr_price - (volatility * 1.5), curr_price + volatility
+    box_msg = "❄️ **动量偏弱**：价格大概率向下寻找支撑，短期突破乏力。"
+else:
+    support, resistance = curr_price - volatility, curr_price + volatility
+    box_msg = "⚖️ **均衡震荡**：价格将在窄幅区间内洗盘，消化高位压力。"
+
+p_col1, p_col2 = st.columns(2)
+p_col1.metric("预测支撑位 (地板)", f"￥{support:.2f}")
+p_col2.metric("预测阻力位 (天花板)", f"￥{resistance:.2f}")
+st.write(box_msg)
+
 st.divider()
 
 

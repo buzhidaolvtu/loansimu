@@ -2,7 +2,9 @@ import streamlit as st
 import akshare as ak
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
+from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
+from fredapi import Fred
 
 # 页面配置
 st.set_page_config(page_title="黄金全周期深度分析", layout="wide")
@@ -25,10 +27,222 @@ if realtime is not None:
     c1.metric("最新现价 (元/克)", f"￥{float(realtime['现价']):.2f}")
     c2.write(f"⏱ 行情时间: {realtime['时间']}\n\n🔄 更新时间: {realtime['更新时间']}")
     c3.success(f"✅ 接口正常 | 品种: {realtime['品种']}")
+
+st.divider()
+
+# --- 渲染宏观看板 ---
+st.header("🎛 宏观博弈：实际利率 vs 美元强度")
+st.caption("左轴：10年期美债实际利率 (%) | 右轴：美元指数 (指数越高说明美元越强)")
+
+# 在代码顶部定义你的 Key (拿到后填入)
+FRED_API_KEY = "7ca649d44293c1d55844b8806fa0305e"
+# --- 数据获取函数 ---
+@st.cache_data(ttl=86400)
+def get_macro_data_from_fred():
+    try:
+        fred = Fred(api_key=FRED_API_KEY)
+        # 1. 获取 10年期美债实际利率 (DFII10)
+        real_rate = fred.get_series('DFII10')
+        # 2. 获取 美元指数 (DTWEXBGS - 贸易加权美元指数，较稳定)
+        dxy = fred.get_series('DTWEXBGS')
+
+        # 合并并清理数据
+        df_macro = pd.concat([real_rate, dxy], axis=1)
+        df_macro.columns = ['real_rate', 'dxy']
+        df_macro = df_macro.reset_index().rename(columns={'index': 'date'})
+
+        # 筛选近 1 年数据
+        one_year_ago = datetime.now() - timedelta(days=365)
+        df_macro = df_macro[df_macro['date'] >= one_year_ago].dropna()
+        return df_macro
+    except Exception as e:
+        st.error(f"FRED 接口调用失败，请检查 Key 或网络: {e}")
+        return None
+macro_df = get_macro_data_from_fred()
+
+if macro_df is not None and not macro_df.empty:
+    # 创建双 Y 轴图表
+    fig_macro = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # 添加实际利率曲线 (左轴)
+    fig_macro.add_trace(
+        go.Scatter(x=macro_df['date'], y=macro_df['real_rate'],
+                   name="10Y实际利率 (成本)", line=dict(color='#00BFFF', width=2)),
+        secondary_y=False,
+    )
+
+    # 添加美元指数曲线 (右轴 - 使用浅色填充体现避险背景)
+    fig_macro.add_trace(
+        go.Scatter(x=macro_df['date'], y=macro_df['dxy'],
+                   name="美元指数 (避险/信用)", line=dict(color='rgba(169, 169, 169, 0.5)', width=1),
+                   fill='tozeroy', fillcolor='rgba(200, 200, 200, 0.1)'),
+        secondary_y=True,
+    )
+
+    # 零轴线
+    fig_macro.add_hline(y=0, line_dash="dash", line_color="red", secondary_y=False)
+
+    # 布局美化
+    fig_macro.update_layout(
+        hovermode="x unified",
+        template="plotly_white",
+        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=30, b=10)
+    )
+
+    fig_macro.update_yaxes(title_text="实际利率 (%)", secondary_y=False)
+    fig_macro.update_yaxes(title_text="美元指数", secondary_y=True)
+
+    st.plotly_chart(fig_macro, use_container_width=True)
+
+    # 增加实时宏观解读
+    curr_rate = macro_df['real_rate'].iloc[-1]
+    curr_dxy = macro_df['dxy'].iloc[-1]
+
+    m_col1, m_col2 = st.columns(2)
+    m_col1.write(f"📊 当前实际利率: **{curr_rate:.2f}%**")
+    m_col2.write(f"💵 当前美元指数: **{curr_dxy:.2f}**")
+
+    if curr_rate < 0:
+        st.info("💡 提示：当前实际利率为负，持有黄金具有天然吸引力。")
+    elif curr_dxy > 105:
+        st.warning("⚠️ 警报：美元极强。若金价同步大涨，说明避险情绪极高，市场在对冲美元信用。")
+
+else:
+    st.info("正在等待 FRED 数据加载...")
+
+
+@st.cache_data(ttl=3600)
+def get_gold_daily_data():
+    # 获取原始日线数据
+    df = ak.spot_hist_sge(symbol="Au99.99")
+    df['date'] = pd.to_datetime(df['date'])
+    # 仅保留日期和收盘价
+    df_daily = df[['date', 'close']].rename(columns={'close': 'price'})
+    return df_daily
+
+
+@st.cache_data(ttl=86400)
+def get_cb_alpha_analysis(df_gold_daily):
+    try:
+        fred = Fred(api_key=FRED_API_KEY)
+        # 获取10年期美债收益率 (日级)
+        bond_yield = fred.get_series('DGS10')
+        bond_df = bond_yield.reset_index()
+        bond_df.columns = ['date', 'yield']
+        bond_df['date'] = pd.to_datetime(bond_df['date'])
+
+        # 建立索引进行日级合并
+        df_cb = pd.merge(df_gold_daily, bond_df, on='date', how='inner')
+
+        # 计算 30 日滚动相关性 (日级变化)
+        # pct_change() 在日级数据上能反映最真实的博弈动量
+        df_cb['corr'] = df_cb['price'].pct_change().rolling(30).corr(df_cb['yield'].pct_change())
+
+        return df_cb.tail(365)  # 只看近一年
+    except Exception as e:
+        st.error(f"去美元化日级分析失败: {e}")
+        return None
+
+# 1. 获取日级金价
+df_daily = get_gold_daily_data()
+# 3. 渲染“去美元化”日级看板
+cb_df = get_cb_alpha_analysis(df_daily)
+
+if cb_df is not None:
+    # 绘制相关性曲线
+    fig_corr = go.Figure()
+    fig_corr.add_trace(go.Scatter(
+        x=cb_df['date'], y=cb_df['corr'],
+        name="30日滚动相关性",
+        line=dict(color='#FFD700', width=2),
+        fill='tozeroy',
+        fillcolor='rgba(255, 215, 0, 0.1)'
+    ))
+
+    # 增加参考线
+    fig_corr.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.5)
+    fig_corr.add_hline(y=-0.5, line_dash="dot", line_color="green", annotation_text="正常负相关")
+
+    fig_corr.update_layout(
+        yaxis=dict(range=[-1, 1], title="相关系数"),
+        height=300,
+        template="plotly_white",
+        margin=dict(t=10, b=10)
+    )
+    st.plotly_chart(fig_corr, use_container_width=True)
+
+    # 深度解读逻辑
+    latest_corr = cb_df['corr'].iloc[-1]
+    if latest_corr > -0.2:
+        st.success(f"🔥 **检测到静默溢价显著！** 当前相关性为 {latest_corr:.2f}。金价正在抵抗高利率压力，去美元化买盘强劲。")
+    else:
+        st.info(f"📊 当前相关性为 {latest_corr:.2f}。金价目前仍主要受宏观利率逻辑驱动。")
+
+
+# --- 1. 定义博弈标签逻辑 ---
+def get_battle_label(corr):
+    if corr < -0.6:
+        return "🍏 经典引力模式", "利率主导：金价严格跟随宏观成本，建议关注实际利率低点布局。", "normal"
+    elif -0.6 <= corr < -0.2:
+        return "🟡 博弈过渡模式", "情绪抬头：避险情绪开始干扰利率定价，金价波幅可能加大。", "off"
+    elif -0.2 <= corr < 0.2:
+        return "🔥 去美元化/信用对冲", "信用主导：机构不计成本减持美元资产，金价已脱离利率束缚！", "inverse"
+    else:
+        return "🚨 极端背离模式", "狂热/恐慌：金价与利率同涨。警惕高溢价下的短期剧烈波动。", "inverse"
+
+# --- 2. 在 UI 中展示 (增加趋势提醒逻辑) ---
+if cb_df is not None:
+    latest_corr = cb_df['corr'].iloc[-1]
+    # 获取过去 5 天的平均相关性，用于判断趋势稳定性
+    avg_corr_5d = cb_df['corr'].tail(5).mean()
+
+    label, desc, status_color = get_battle_label(latest_corr)
+
+    st.subheader("🕵️ 市场博弈诊断与趋势预警")
+
+    # 计算趋势提醒内容
+    trend_note = ""
+    trend_level = "info"  # info, warning, success
+
+    if latest_corr > -0.2:
+        if latest_corr > avg_corr_5d:
+            trend_note = "🚀 **溢价加速中**：金价正快速脱离美债引力。这种‘极端背离’通常由突发地缘或央行大额扫货引起，短期冲力强但波动风险极大。"
+            trend_level = "warning"
+        else:
+            trend_note = "🧘 **高位盘整中**：虽然仍处于‘去美元化’逻辑，但脱离程度有所收敛。说明市场正在消化高价，寻找新的信用锚点。"
+            trend_level = "info"
+    elif latest_corr < -0.6:
+        trend_note = "📏 **回归理性**：金价重新回到实际利率的轨道。此时定投最稳，建议紧盯‘实际利率曲线’，利率见顶即是加仓良机。"
+        trend_level = "success"
+    else:
+        trend_note = "🌀 **逻辑切换中**：市场正在利率与避险之间摇摆，方向不明。建议维持 2026 既定定投节奏，不宜激进调仓。"
+        trend_level = "info"
+
+    # 创建彩色看板
+    battle_col1, battle_col2 = st.columns([1, 2])
+    with battle_col1:
+        st.metric("实时相关性锚点", f"{latest_corr:.2f}",
+                  delta=f"{latest_corr - avg_corr_5d:.2f} (对比5日均值)",
+                  help="接近-1为经典逻辑，接近0或转正为去美元化逻辑")
+    with battle_col2:
+        st.markdown(f"### {label}")
+        if trend_level == "warning":
+            st.warning(trend_note)
+        elif trend_level == "success":
+            st.success(trend_note)
+        else:
+            st.info(trend_note)
+
+    # 针对定投的实操提醒
+    st.markdown(f"> **2026实操策略提示：** {desc}")
+
 st.divider()
 
 
 # --- 2. 数据处理：计算多周期 ROI 与 年化收益 ---
+# (以下代码保持原样，未做任何逻辑修改)
 @st.cache_data(ttl=3600)
 def get_gold_analysis_data():
     df = ak.spot_hist_sge(symbol="Au99.99")
